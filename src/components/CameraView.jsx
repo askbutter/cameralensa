@@ -79,10 +79,10 @@ const CameraView = ({ onBrightnessChange }) => {
     };
 
     return (
-        <div className="absolute inset-0 w-full h-full -z-10 bg-black overflow-hidden">
+        <div className="w-full h-full relative bg-pink-100 overflow-hidden">
             <video
                 ref={videoRef}
-                className="w-full h-full object-cover opacity-80"
+                className="w-full h-full object-cover opacity-100"
                 playsInline
                 muted
             />
@@ -95,8 +95,9 @@ const CameraView = ({ onBrightnessChange }) => {
                 className="hidden"
             />
 
-            {/* Overlay Gradient for readability */}
-            <div className="absolute inset-0 bg-gradient-to-b from-black/40 via-transparent to-black/80 pointer-events-none" />
+            {/* Viewfinder Overlay Markers */}
+            <div className="absolute inset-4 border border-white/20 rounded-xl pointer-events-none opacity-50" />
+            <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-4 h-4 border border-white/40 rounded-full pointer-events-none opacity-50" />
         </div>
     );
 };

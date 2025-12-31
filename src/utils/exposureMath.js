@@ -1,17 +1,11 @@
-// Basic Lux to EV conversion (approximate)
-// EV = log2(Lux * 100 / K) where K is calibration constant (12.5 commonly)
 export const calculateEV = (brightness0to255) => {
     // Normalize brightness to 0-1
     const normalized = brightness0to255 / 255;
 
-    // Approximate Lux (This is a rough heuristic for camera feeds)
-    // A fully white screen is approx 10,000 lux (daylight) in this mapping? 
-    // This needs calibration. Let's assume linear mapping for now to get a relative EV.
-    // Standard video feed is gamma corrected, so we might need to linearize.
-    // Using a simplified exponential curve to map byte value to Lux.
-    const lux = Math.pow(normalized * 100, 2) * 5; // Heuristic
+    // Heuristic mapping
+    const lux = Math.pow(normalized * 100, 2) * 5;
 
-    if (lux === 0) return -2; // Pitch black
+    if (lux === 0) return -2;
 
     // EV @ ISO 100
     return Math.log2(lux / 2.5);
@@ -29,92 +23,79 @@ export const formatShutter = (val) => {
     return `1/${Math.round(1 / val)}`;
 };
 
-/**
- * Recalculate settings based on locked values and current EV.
- * EV = log2(N^2 / t) - log2(ISO/100)
- * targetEV is the metered EV from the scene.
- */
-export const calculateSettings = (ev, currentSettings, locks) => {
-    let { iso, aperture, shutter } = currentSettings;
-
-    // Target EV for calculation (compensate for ISO)
-    // Base EV is usually defined at ISO 100.
-    // Exposure Formula: N^2 / t = (LS / K) = 2^EV
-    // Where EV is for ISO 100.
-
-    // Let's stick to the EV100 definition:
-    // EV100 = log2(N^2) - log2(t)
-    // And corrected for ISO: EV_current = EV100 + log2(ISO/100)
-
-    // So: Scene EV (measured) = log2(N^2) - log2(t) + log2(ISO/100)
-
-    // We want to find the missing variable that satisfies:
-    // log2(N^2) - log2(t) + log2(ISO/100) = ev
-
-    // Case 1: ISO Locked
-    if (locks.iso) {
-        if (locks.aperture) {
-            // Find Shutter
-            // log2(t) = log2(N^2) + log2(ISO/100) - ev
-            const log2t = Math.log2(aperture * aperture) + Math.log2(iso / 100) - ev;
-            const t = Math.pow(2, log2t);
-            shutter = getClosest(t, SHUTTER_STOPS);
-        } else {
-            // Find Aperture (Default priority) or balance both?
-            // Let's assume Aperture Priority if ISO is locked (user sets Aperture manually usually).
-            // If Aperture is NOT locked, we assume we want to find a good Aperture for the current Shutter?
-            // Let's implement logic: If ISO locked, try to keep Shutter reasonable (1/60) and find Aperture.
-            // Or if Aperture locked, find Shutter.
-
-            // Simple logic: Prioritize finding Shutter (Aperture Priority Mode essentially)
-            // If both unlocked, fix ISO 400, fix Aperture f/5.6, find Shutter.
-
-            // Let's use the current Aperture as the "Soft Lock" if not explicitly locked, 
-            // effectively converting it to Aperture priority.
-            const log2t = Math.log2(aperture * aperture) + Math.log2(iso / 100) - ev;
-            const t = Math.pow(2, log2t);
-            shutter = getClosest(t, SHUTTER_STOPS);
-        }
-    }
-    // Case 2: Aperture Locked (Shutter Priority-ish or Auto ISO)
-    else if (locks.aperture) {
-        if (locks.shutter) {
-            // Find ISO
-            // log2(ISO/100) = ev - log2(N^2) + log2(t)
-            const logIsoNorm = ev - Math.log2(aperture * aperture) + Math.log2(shutter);
-            const isoVal = 100 * Math.pow(2, logIsoNorm);
-            iso = getClosest(isoVal, ISO_STOPS);
-        } else {
-            // Find Shutter (Auto ISO is rare in manual film cameras, usually you lock ISO).
-            // So if Aperture Locked, we usually vary Shutter.
-            // Unless ISO is "Auto"?
-            // Let's assume ISO is semi-fixed to 400 if unlocked.
-            iso = 400;
-            // Recalc shutter
-            const log2t = Math.log2(aperture * aperture) + Math.log2(iso / 100) - ev;
-            const t = Math.pow(2, log2t);
-            shutter = getClosest(t, SHUTTER_STOPS);
-        }
-    }
-    // Case 3: Nothing Locked (Full Auto)
-    else {
-        // Defaults
-        iso = 400; // Good all-rounder
-        aperture = 5.6; // Sweet spot
-        // Solve Shutter
-        const log2t = Math.log2(aperture * aperture) + Math.log2(iso / 100) - ev;
-        const t = Math.pow(2, log2t);
-        shutter = getClosest(t, SHUTTER_STOPS);
-    }
-
-    // If Shutter is out of bounds, we might need to adjust the others even if "Soft Locked".
-    // But for simple v1, let's just clamp.
-
-    return { iso, aperture, shutter };
-};
-
 function getClosest(val, arr) {
     return arr.reduce((prev, curr) => {
         return (Math.abs(curr - val) < Math.abs(prev - val) ? curr : prev);
     });
 }
+
+/**
+ * Recalculate settings based on locked values and current EV.
+ */
+export const calculateSettings = (ev, currentSettings, locks) => {
+    let { iso, aperture, shutter } = currentSettings;
+
+    // EXPOSURE FORMULA: ev = log2(N^2) - log2(t) + log2(ISO/100)
+
+    // LOGIC:
+    // 1. Identify which variables are LOCKED.
+    // 2. Solve for the UNLOCKED variable.
+    // 3. If multiple unlocked, prioritize: Fix ISO -> Fix Aperture -> Solve Shutter.
+
+    // Case 1: All Locked (Do nothing, or warn?)
+    if (locks.iso && locks.aperture && locks.shutter) {
+        return { iso, aperture, shutter };
+    }
+
+    // Case 2: 2 Locked, 1 Unlocked (Deterministic)
+    if (locks.iso && locks.aperture) {
+        // Solve Shutter: log2(t) = log2(N^2) + log2(ISO/100) - ev
+        const log2t = Math.log2(aperture * aperture) + Math.log2(iso / 100) - ev;
+        shutter = getClosest(Math.pow(2, log2t), SHUTTER_STOPS);
+    }
+    else if (locks.iso && locks.shutter) {
+        // Solve Aperture: log2(N^2) = ev + log2(t) - log2(ISO/100)
+        let logN2 = ev + Math.log2(shutter) - Math.log2(iso / 100);
+        let apertureVal = Math.sqrt(Math.pow(2, logN2));
+        aperture = getClosest(apertureVal, APERTURE_STOPS);
+    }
+    else if (locks.aperture && locks.shutter) {
+        // Solve ISO: log2(ISO/100) = ev - log2(N^2) + log2(t)
+        let logIso = ev - Math.log2(aperture * aperture) + Math.log2(shutter);
+        let isoVal = 100 * Math.pow(2, logIso);
+        iso = getClosest(isoVal, ISO_STOPS);
+    }
+
+    // Case 3: 1 Locked, 2 Unlocked (Heuristic)
+    else if (locks.iso) {
+        // ISO Locked. Prefer calculating Shutter (Aperture Priority-ish).
+        // Keep Aperture fixed at current unless it's impossible?
+        // Let's just hold current Aperture constant (effectively Soft Lock) and solve Shutter.
+        const log2t = Math.log2(aperture * aperture) + Math.log2(iso / 100) - ev;
+        shutter = getClosest(Math.pow(2, log2t), SHUTTER_STOPS);
+    }
+    else if (locks.aperture) {
+        // Aperture Locked. Prefer calculating Shutter.
+        // Soft Lock ISO (current).
+        const log2t = Math.log2(aperture * aperture) + Math.log2(iso / 100) - ev;
+        shutter = getClosest(Math.pow(2, log2t), SHUTTER_STOPS);
+    }
+    else if (locks.shutter) {
+        // Shutter Locked. Prefer calculating Aperture.
+        // Soft Lock ISO (current).
+        let logN2 = ev + Math.log2(shutter) - Math.log2(iso / 100);
+        let apertureVal = Math.sqrt(Math.pow(2, logN2));
+        aperture = getClosest(apertureVal, APERTURE_STOPS);
+    }
+
+    // Case 4: None Locked (Full Auto)
+    else {
+        // Default: Fix ISO 400, Fix Aperture f/5.6, Solve Shutter
+        iso = 400; // Reset to reasonable base if everything unlocked
+        aperture = 5.6;
+        const log2t = Math.log2(aperture * aperture) + Math.log2(iso / 100) - ev;
+        shutter = getClosest(Math.pow(2, log2t), SHUTTER_STOPS);
+    }
+
+    return { iso, aperture, shutter };
+};

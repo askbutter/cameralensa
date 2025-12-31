@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { ShieldCheck, ArrowRight } from 'lucide-react';
+import { Lock, ArrowRight, Star } from 'lucide-react';
 
 const AuthGate = ({ children }) => {
     const [isAuthenticated, setIsAuthenticated] = useState(false);
@@ -7,7 +7,6 @@ const AuthGate = ({ children }) => {
     const [error, setError] = useState(false);
 
     useEffect(() => {
-        // Check if we already have the secret
         const stored = localStorage.getItem('camera_access_granted');
         if (stored === 'true') {
             setIsAuthenticated(true);
@@ -16,16 +15,13 @@ const AuthGate = ({ children }) => {
 
     const handleUnlock = (e) => {
         e.preventDefault();
-        // For V1, the 'secret' is hardcoded here or effectively 'any non-empty' 
-        // Wait, user said "just I can access it", but "save to device".
-        // I will set a simple pin: "2025" or allow the user to SET it on first run?
-        // Let's use a nice default "film"
         if (code.toLowerCase() === 'film' || code === '2025') {
             localStorage.setItem('camera_access_granted', 'true');
             setIsAuthenticated(true);
         } else {
             setError(true);
-            setTimeout(() => setError(false), 500); // Shake animation or something
+            setTimeout(() => setError(false), 500);
+            setCode('');
         }
     };
 
@@ -34,41 +30,46 @@ const AuthGate = ({ children }) => {
     }
 
     return (
-        <div className="fixed inset-0 bg-black flex flex-col items-center justify-center p-6 z-50">
-            <div className="w-full max-w-sm flex flex-col items-center gap-8">
-                <div className="w-20 h-20 bg-white/10 rounded-full flex items-center justify-center backdrop-blur-xl animate-fade-in">
-                    <ShieldCheck size={40} className="text-white" />
+        <div className="fixed inset-0 flex flex-col items-center justify-center p-6 z-50 text-white font-soft">
+            {/* Note: Body background handles the stars, this overlay is transparent */}
+            <div className="absolute inset-0 bg-cosmic-bg/80 backdrop-blur-sm -z-10"></div>
+
+            <div className="w-full max-w-sm flex flex-col gap-10 p-10 relative z-10 transition-all text-center">
+
+                <div className="flex flex-col items-center gap-4">
+                    <div className="relative">
+                        <Lock size={40} className="text-white/80" strokeWidth={1.5} />
+                        <Star size={16} className="absolute -top-2 -right-4 text-cosmic-accent animate-pulse" fill="#FFD700" />
+                    </div>
+                    <div>
+                        <h1 className="text-2xl font-bold tracking-wide text-white">Galaxy Gate</h1>
+                        <p className="text-sm text-cosmic-soft opacity-70">Enter access code to proceed</p>
+                    </div>
                 </div>
 
-                <div className="text-center space-y-2">
-                    <h1 className="text-2xl font-bold font-[var(--font-hero)]">Access Required</h1>
-                    <p className="text-white/50 text-sm">Enter the secure access code to unlock.</p>
-                </div>
+                <form onSubmit={handleUnlock} className="w-full flex flex-col gap-6">
+                    <div className="relative group">
+                        <input
+                            type="password"
+                            value={code}
+                            onChange={(e) => setCode(e.target.value)}
+                            placeholder="••••"
+                            className={`
+                              w-full bg-white/5 border rounded-2xl px-6 py-4 
+                              text-center text-xl tracking-[0.3em] text-white placeholder:text-white/10
+                              focus:outline-none focus:border-cosmic-accent/50 focus:bg-white/10 transition-all
+                              ${error ? 'border-red-400 text-red-200' : 'border-white/10'}
+                            `}
+                        />
+                    </div>
 
-                <form onSubmit={handleUnlock} className="w-full relative">
-                    <input
-                        type="password"
-                        value={code}
-                        onChange={(e) => setCode(e.target.value)}
-                        placeholder="Passcode..."
-                        className={`
-              w-full bg-white/5 border border-white/10 rounded-xl px-5 py-4 
-              text-center text-xl tracking-widest placeholder:tracking-normal placeholder:text-white/20
-              focus:outline-none focus:border-white/30 transition-all
-              ${error ? 'border-red-500/50 bg-red-500/10' : ''}
-            `}
-                    />
                     <button
                         type="submit"
-                        className="absolute right-2 top-2 bottom-2 bg-white text-black px-4 rounded-lg hover:bg-white/90 font-bold"
+                        className="w-full py-4 rounded-2xl font-bold bg-white/10 hover:bg-white/20 border border-white/5 transition-all text-sm tracking-widest"
                     >
-                        <ArrowRight size={20} />
+                        UNLOCK
                     </button>
                 </form>
-
-                <div className="text-xs text-white/20">
-                    Hint: "film"
-                </div>
             </div>
         </div>
     );
